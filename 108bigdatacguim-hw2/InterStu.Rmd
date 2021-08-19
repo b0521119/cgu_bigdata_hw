@@ -1,0 +1,344 @@
+---
+title: "108-2 大數據分析方法 作業二"
+output: github_document
+author: 闕妤臻
+---
+
+作業完整說明[連結](https://docs.google.com/document/d/1aLGSsGXhgOVgwzSg9JdaNz2qGPQJSoupDAQownkGf_I/edit?usp=sharing)
+
+學習再也不限定在自己出生的國家，台灣每年有許多學生選擇就讀國外的大專院校，同時也有人多國外的學生來台灣就讀，透過分析大專校院境外學生人數統計、大專校院本國學生出國進修交流數、世界各主要國家之我國留學生人數統計表可以了解各大專院校國際交流的情形。請同學分析以下議題，並以視覺化的方式呈現分析結果，呈現105-107年以後大專院校國際交流的情形 (如提供網址資料有缺少年份，可嘗試自己google一下需要年份的資料)。
+
+
+
+
+## 來台境外生分析
+### 資料匯入與處理
+```{r dataloadToTWN}
+library(jsonlite)
+library(dplyr)
+library(readr)
+library(knitr)
+
+outsidestudent105 <- read_csv("C:/Users/chueh/OneDrive/桌面/105_ab105_C.csv")
+View(outsidestudent105)
+outsidestudent106 <- read_csv("C:/Users/chueh/OneDrive/桌面/106_ab106_C.csv")
+View(outsidestudent106)
+outsidestudent107<- read_csv("C:/Users/chueh/OneDrive/桌面/107_ab107_C.csv")
+View(outsidestudent107)
+
+schoolstu105 <- read_csv("C:/Users/chueh/OneDrive/桌面/105_ab105_S.csv")
+View(schoolstu105)
+schoolstu106 <- read_csv("C:/Users/chueh/OneDrive/桌面/106_ab106_S.csv")
+View(schoolstu106)
+schoolstu107 <- read_csv("C:/Users/chueh/OneDrive/桌面/107_ab107_S.csv")
+View(schoolstu107)
+outsidestudent105[1,2]<-"大陸地區"
+schoolstu105[1,2]<-"大陸地區"
+outsidestudent105$Total<-rowSums(outsidestudent105[,3:11])
+outsidestudent106$Total<-rowSums(outsidestudent106[,3:11])
+outsidestudent107$Total<-rowSums(outsidestudent107[,3:11])
+```
+
+### 哪些國家來台灣唸書的學生最多呢？ 
+```{r ToTWNCountry}
+#抓抓樂
+join105106<-inner_join(outsidestudent105,outsidestudent106,by=c("洲別","國別"))
+join105106107<-inner_join(join105106,outsidestudent107,by=c("洲別","國別"))
+joincom<-join105106107[c(1,2,12,22,32)]
+joincom$SumTotal<-rowSums(joincom[,3:5])
+knitr::kable(joincom)
+View(joincom)
+
+names(joincom)[3]<-"105總Total"
+names(joincom)[4]<-"106總Total"
+names(joincom)[5]<-"107總Total"
+joincomplete<-head(joincom[order(joincom$SumTotal,decreasing=T),],10)
+knitr::kable(joincomplete)
+View(joincomplete)
+```
+
+### 哪間大學的境外生最多呢？
+```{r ToTWNUniversity}
+schoolstu105[1,2]<-"0001"
+schoolstu105$Total<-rowSums(schoolstu105[,4:12])
+schoolstu106$Total<-rowSums(schoolstu106[,4:12])
+schoolstu107$Total<-rowSums(schoolstu107[,4:12])
+bine105106<-inner_join(schoolstu105,schoolstu106,by=c("學校類型","學校名稱"))
+bine105106107<-inner_join(bine105106,schoolstu107,by=c("學校類型","學校名稱"))
+binecom<-bine105106107[c(1,3,13,24,35)]
+binecom$SumTotal<-rowSums(binecom[,3:5])
+knitr::kable(binecom)
+View(binecom)
+
+names(binecom)[3]<-"105總Total"
+names(binecom)[4]<-"106總Total"
+names(binecom)[5]<-"107總Total"
+binecomplete<-head(binecom[order(binecom$SumTotal,decreasing=T),],11)
+knitr::kable(binecomplete)
+View(binecomplete)
+```
+
+### 各個國家來台灣唸書的學生人數長條圖
+```{r ToTWNCountryBar}
+library(ggplot2) 
+joincomplot<-ggplot()+
+  geom_bar(data = joincom,
+           aes(x=SumTotal,y=國別),
+           stat = "identity")+
+  labs(x="學生人數",y="國家名稱")
+joincomplot
+```
+
+### 各個國家來台灣唸書的學生人數面量圖
+```{r ToTWNCountryMap}
+library(maptools)
+#讀取shapefile
+worldMap<-readShapeSpatial("ne_110m_admin_0_countries/ne_110m_admin_0_countries.shp")
+
+#shapefile轉為data.frame
+worldMap.df<-fortify(worldMap)
+
+#字串轉數字
+worldMap.df$id<-as.numeric(worldMap.df$id)
+#建立mydata，包含地區名稱、地區ISO3碼、地區id
+mydata<-
+  data.frame(Name=worldMap$NAME_LONG,ISO3=worldMap$ISO_A3,id=seq(0,length(worldMap$ISO_A3)-1))
+#因子轉字串和補遺漏值
+mydata$ISO3<-as.character(mydata$ISO3)
+mydata$ISO3[56]<-"FRA"
+mydata$ISO3[119]<-"NOR"
+
+#地圖資料合併mydata(以id為依據，新增地圖名稱欄位、地區ISO3碼欄位)
+worldMap.df<-left_join(worldMap.df,mydata,by="id")
+#讀取國家中英對照表
+countryName<-fromJSON("countries.json")
+#國家中英對照表處理(對照表和開放資料的中文地區名稱不一致，以開放資料的地區名稱為依據，修改對照表的地區名稱)
+index<-c(2,13,17,40,48,55,73,98,119,120,122,143,153,160,166,177,191,195,199,204,207,209,227,228,229,238)
+Name<-c("阿拉伯聯合大公國","澳大利亞","波士尼亞與赫塞哥維納","剛果民主共和國","大陸地區","賽普勒斯","密克羅尼西亞",
+        "克羅埃西亞","葛摩聯盟","聖克里斯多福","南韓","馬紹爾群島共和國","馬爾他","納米比亞","納戈爾諾-卡拉巴赫",
+        "巴布亞紐幾內亞","塞爾維亞共和國","索羅門群島","新加坡","獅子山共和國","索馬利亞民主共和國","南蘇丹共和國",
+        "千里達","吐瓦魯","臺灣","聖文森")
+countryName$Taiwan[index]<-Name
+
+#地區資料合併國家中英對照表(以ISO3碼為依據，主要目的為新增中文地區名稱欄位)
+worldMap.df<-left_join(worldMap.df,countryName,by="ISO3")
+#地區資料選取會用到的欄位
+worldMap.df<-worldMap.df%>%
+  select(long:ISO3,Taiwan)
+#欄位名稱處理
+colnames(worldMap.df)[10]<-"國別" 
+#地區資料合併開放資料為最終資料(以國別為依據，新增總人數欄位)
+final.data<-left_join(worldMap.df,joincom,by="國別")
+
+library(RColorBrewer)
+othercountryTW<-ggplot()+
+  geom_polygon(data=final.data,aes(x=long,y=lat,group=group,fill=SumTotal),color="black",size=0.25)+
+  coord_quickmap()+
+  scale_fill_gradientn(colours=brewer.pal(7,"OrRd"))+
+  theme_void()
+
+othercountryTW
+```
+
+## 台灣學生國際交流分析
+
+### 資料匯入與處理
+```{r dataloadFromTWN}
+lightstu <- read_csv("C:/Users/chueh/OneDrive/桌面/lightstu.csv")
+View(lightstu)
+```
+
+### 台灣大專院校的學生最喜歡去哪些國家進修交流呢？
+```{r FromTWNCountry}
+lightstu$sumpeope<-
+  lightstu$`本國學生出國進修交流至少1學期(修讀學分)以上人數小計`+lightstu$`本國學生出國進修交流未滿1學期(修讀學分)人數小計`
+View(lightstu)
+lightstu_country<-
+  group_by(lightstu,`進修交流國家(地區)別`)%>%
+  summarise(people=sum(sumpeope))
+View(lightstu_country)
+names(lightstu_country)[1]<-"國別"
+lightstu_country_top10<-
+  head(lightstu_country[order(lightstu_country$people,decreasing = T),],10)
+View(lightstu_country_top10)
+knitr::kable(lightstu_country_top10)
+```
+
+### 哪間大學的出國交流學生數最多呢？
+```{r FromTWNUniversity}
+lightstu_school<-
+  group_by(lightstu,學校名稱)%>%
+  summarise(people=sum(sumpeope))
+View(lightstu_school)
+lightstu_school_top10<-head(lightstu_school[order(lightstu_school$people,decreasing = T),],10)
+View(lightstu_school_top10)
+knitr::kable(lightstu_school_top10)
+```
+
+### 台灣大專院校的學生最喜歡去哪些國家進修交流條狀圖
+```{r FromTWNCountryBar}
+library(ggplot2) 
+lightstu_schoolplot<-ggplot()+
+  geom_bar(data = lightstu_school,
+           aes(x=people,y=學校名稱),
+           stat = "identity")+
+  labs(x="學生人數",y="學校名稱")
+lightstu_schoolplot
+```
+
+### 台灣大專院校的學生最喜歡去哪些國家進修交流面量圖
+```{r FromTWNCountryMap}
+library(maptools)
+#讀取shapefile
+worldMap<-readShapeSpatial("ne_110m_admin_0_countries/ne_110m_admin_0_countries.shp")
+
+#shapefile轉為data.frame
+worldMap.df<-fortify(worldMap)
+
+#字串轉數字
+worldMap.df$id<-as.numeric(worldMap.df$id)
+#建立mydata，包含地區名稱、地區ISO3碼、地區id
+mydata<-data.frame(Name=worldMap$NAME_LONG,ISO3=worldMap$ISO_A3,id=seq(0,length(worldMap$ISO_A3)-1))
+#因子轉字串和補遺漏值
+mydata$ISO3<-as.character(mydata$ISO3)
+mydata$ISO3[56]<-"FRA"
+mydata$ISO3[119]<-"NOR"
+
+#地圖資料合併mydata(以id為依據，新增地圖名稱欄位、地區ISO3碼欄位)
+worldMap.df<-left_join(worldMap.df,mydata,by="id")
+#讀取國家中英對照表
+countryName<-fromJSON("countries.json")
+#國家中英對照表處理(對照表和開放資料的中文地區名稱不一致，以開放資料的地區名稱為依據，修改對照表的地區名稱)
+index<-c(2,13,17,40,48,55,73,98,119,120,122,143,153,160,166,177,191,195,199,204,207,209,227,228,229,238)
+Name<-c("阿拉伯聯合大公國","澳大利亞","波士尼亞與赫塞哥維納","剛果民主共和國","大陸地區","賽普勒斯","密克羅尼西亞",
+        "克羅埃西亞","葛摩聯盟","聖克里斯多福","南韓","馬紹爾群島共和國","馬爾他","納米比亞","納戈爾諾-卡拉巴赫",
+        "巴布亞紐幾內亞","塞爾維亞共和國","索羅門群島","新加坡","獅子山共和國","索馬利亞民主共和國","南蘇丹共和國",
+        "千里達","吐瓦魯","臺灣","聖文森")
+countryName$Taiwan[index]<-Name
+
+#地區資料合併國家中英對照表(以ISO3碼為依據，主要目的為新增中文地區名稱欄位)
+worldMap.df<-left_join(worldMap.df,countryName,by="ISO3")
+#地區資料選取會用到的欄位
+worldMap.df<-worldMap.df%>%
+  select(long:ISO3,Taiwan)
+#欄位名稱處理
+colnames(worldMap.df)[10]<-"國別" 
+#地區資料合併開放資料為最終資料(以國別為依據，新增總人數欄位)
+final.data<-left_join(worldMap.df,lightstu_country,by="國別")
+
+library(RColorBrewer)
+lightstu_countryTWmap<-ggplot()+
+  geom_polygon(data=final.data,aes(x=long,y=lat,group=group,fill=people),color="black",size=0.25)+
+  coord_quickmap()+
+  scale_fill_gradientn(colours=brewer.pal(7,"OrRd"))+
+  theme_void()
+
+lightstu_countryTWmap
+```
+
+## 台灣學生出國留學分析
+
+### 資料匯入與處理
+```{r dataloadFromTWNAb}
+studyabroad <- read_csv("C:/Users/chueh/OneDrive/桌面/studyabroad.csv")
+View(studyabroad)
+```
+
+### 台灣學生最喜歡去哪些國家留學呢？
+```{r FromTWNAb}
+studyabroadcountry<-group_by(studyabroad,國別,洲別)%>%
+  summarise(Totalstudent=sum(總人數))
+stuabcomplete<-
+  head(studyabroadcountry[order(studyabroadcountry$Totalstudent,decreasing=T),],10)
+knitr::kable(stuabcomplete)
+View(stuabcomplete)
+```
+
+### 台灣學生最喜歡去哪些國家留學面量圖
+```{r FromTWNAbMap}
+library(maptools)
+#讀取shapefile
+worldMap<-readShapeSpatial("ne_110m_admin_0_countries/ne_110m_admin_0_countries.shp")
+
+#shapefile轉為data.frame
+worldMap.df<-fortify(worldMap)
+
+#字串轉數字
+worldMap.df$id<-as.numeric(worldMap.df$id)
+#建立mydata，包含地區名稱、地區ISO3碼、地區id
+mydata<-
+  data.frame(Name=worldMap$NAME_LONG,ISO3=worldMap$ISO_A3,id=seq(0,length(worldMap$ISO_A3)-1))
+#因子轉字串和補遺漏值
+mydata$ISO3<-as.character(mydata$ISO3)
+mydata$ISO3[56]<-"FRA"
+mydata$ISO3[119]<-"NOR"
+
+#地圖資料合併mydata(以id為依據，新增地圖名稱欄位、地區ISO3碼欄位)
+worldMap.df<-left_join(worldMap.df,mydata,by="id")
+#讀取國家中英對照表
+countryName<-fromJSON("countries.json")
+#國家中英對照表處理(對照表和開放資料的中文地區名稱不一致，以開放資料的地區名稱為依據，修改對照表的地區名稱)
+index<-c(13,122,199)
+Name<-c("澳大利亞","南韓","新加坡")
+countryName$Taiwan[index]<-Name
+
+#地區資料合併國家中英對照表(以ISO3碼為依據，主要目的為新增中文地區名稱欄位)
+worldMap.df<-left_join(worldMap.df,countryName,by="ISO3")
+#地區資料選取會用到的欄位
+worldMap.df<-worldMap.df%>%
+  select(long:ISO3,Taiwan)
+#欄位名稱處理
+colnames(worldMap.df)[10]<-"國別" 
+#地區資料合併開放資料為最終資料(以國別為依據，新增總人數欄位)
+final.data<-left_join(worldMap.df,studyabroadcountry,by="國別")
+
+library(RColorBrewer)
+TWstustudyabroad<-ggplot()+
+  geom_polygon(data=final.data,aes(x=long,y=lat,group=group,fill=Totalstudent),color="black",size=0.25)+
+  coord_quickmap()+
+  scale_fill_gradientn(colours=brewer.pal(7,"OrRd"))+
+  theme_void()
+
+TWstustudyabroad
+```
+
+## 綜合分析
+
+請問來台讀書與離台讀書的來源國與留學國趨勢是否相同(5分)？想來台灣唸書的境外生，他們的母國也有很多台籍生嗎？請圖文並茂說明你的觀察(10分)。
+```{r FromTWNAbMap1}
+togetherboth<-inner_join(joincom,studyabroadcountry,by=("國別"))
+bothcomplete<-
+  head(togetherboth[order(togetherboth$SumTotal,decreasing=T),],10)
+names(bothcomplete)[6]<-"來台人數"
+names(bothcomplete)[8]<-"台籍生人數"
+bothcompletecom<-bothcomplete[c(2,6,8)]
+knitr::kable(bothcompletecom)
+View(bothcompletecom)
+
+library(ggplot2) 
+jointcompleteplot<-ggplot()+
+  geom_bar(data= joincomplete,
+       aes(x=factor(1),y= SumTotal, fill = 國別),
+       stat = "identity")+
+  coord_polar("y", start=0)+
+labs(x="",y="來台唸書學生之圓餅圖")
+jointcompleteplot
+
+stuabcompleteplot<-ggplot()+
+  geom_bar(data= stuabcomplete,
+           aes(x=factor(1),y= Totalstudent, fill = 國別),
+           stat = "identity")+
+  coord_polar("y", start=0)+
+  labs(x="",y="台生出國念書之圓餅圖")
+stuabcompleteplot
+```
+
+來台讀書的學生來源國前十名及離台讀書的留學國前十名中，都有
+出現的國家有馬來西亞、日本及美國，在這之中，馬來西亞及美國
+的輸入輸出人數也相差蠻大的，來台讀書的來源國除美國外皆為亞
+洲國家，而離台讀書的留學國卻只有兩個國家是位於亞洲，趨勢差
+異性極大，來台讀書的來源國中除了美國、日本、馬來西亞，其他
+國家的臺籍生人數皆不多。
+而大陸地區較為特別，雖台台念書的陸生的人數我們有算進去，然
+而台灣學生若是去大陸念書我們就沒有計算了，否則兩邊人數作統
+計，可以肯定的是大陸地區一定能佔前三名。
